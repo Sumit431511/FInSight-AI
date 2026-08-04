@@ -645,6 +645,24 @@ class ChatRequest(BaseModel):
     question: str
 
 # ===========================================================
+# Health and Root
+# ===========================================================
+
+@app.get("/")
+def root():
+    return {
+        "message": "FinSight RBAC RAG API is running",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+# ===========================================================
 # Login
 # ===========================================================
 
