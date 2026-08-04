@@ -49,7 +49,7 @@ question_answering_chain = None
 
 def _ensure_rag_dependencies():
     if _IMPORT_ERROR is not None:
-        raise RuntimeError(f"RAG dependencies are unavailable: {_IMPORT_ERROR}")
+        return False
 
     global embeddings, vectorstore, question_answering_chain
 
@@ -82,15 +82,20 @@ def _ensure_rag_dependencies():
         model = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
         question_answering_chain = create_stuff_documents_chain(model, chat_prompt)
 
+    return True
+
 
 def embed_documents_to_vectorstore(docs):
-    _ensure_rag_dependencies()
+    if not _ensure_rag_dependencies():
+        return False
+
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     splits = text_splitter.split_documents(docs)
     vectorstore.add_documents(splits)
 
     print("Documents embedded and saved to vectorstore.")
     print("Total documents:", len(vectorstore.get()["documents"]))
+    return True
 
 def load_file(filepath, role):
     ext = Path(filepath).suffix.lower()
@@ -159,7 +164,9 @@ def wrap_with_reranker(retriever, cohere_api_key, top_n=4):
 
 
 def get_rag_chain(user_role: str, cohere_api_key: str = None):
-    _ensure_rag_dependencies()
+    if not _ensure_rag_dependencies():
+        return None
+
     user_role = user_role.lower()
 
     if user_role == "c-level":

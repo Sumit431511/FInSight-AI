@@ -11,25 +11,16 @@ tabulate
 python-jose
 
 chromadb
-sentence-transformers
-transformers
-torch
 
 langchain
 langchain-core
 langchain-community
 langchain-classic
 langchain-chroma
-langchain-huggingface
 langchain-groq
 langchain-cohere
-
-langgraph
-langsmith
 
 cohere
 openai
 
 pytest
-pytest-playwright
-playwright

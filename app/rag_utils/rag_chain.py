@@ -1,5 +1,6 @@
 from .rag_module import get_rag_chain
 
+
 async def ask_rag(
     question: str,
     role: str,
@@ -14,6 +15,15 @@ async def ask_rag(
         user_role=role,
         cohere_api_key=cohere_api_key,
     )
+
+    if rag_chain is None:
+        return {
+            "answer": (
+                "RAG is currently unavailable in this deployment because the optional AI dependencies "
+                "did not load successfully. The app is still available for authentication and basic browsing."
+            ),
+            "context": [],
+        }
 
     result = rag_chain.invoke(
         {
