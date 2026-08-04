@@ -1,0 +1,49 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python cache and test artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Local databases and generated data
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+chroma_db/
+static/uploads/
+*.log
+*.duckdb
+
+# IDE/editor files
+.idea/
+.vscode/
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Packaging/build artifacts
+build/
+dist/
+*.egg-info/
+
+# Lockfiles
+uv.lock
