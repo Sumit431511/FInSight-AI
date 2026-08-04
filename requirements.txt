@@ -5,6 +5,7 @@ streamlit
 python-dotenv
 requests
 passlib[bcrypt]
+argon2-cffi
 pandas
 duckdb
 tabulate
