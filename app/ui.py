@@ -24,7 +24,7 @@ def auth_headers():
     }
 
 st.set_page_config(
-    page_title="FinSolve AI Assistant",
+    page_title="FinSight AI Assistant",
     page_icon="🤖",
     layout="wide",
 )

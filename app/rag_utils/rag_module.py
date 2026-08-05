@@ -6,6 +6,12 @@ from dotenv import load_dotenv
 
 from app.config import get_data_dir
 
+
+class SimpleDocument:
+    def __init__(self, page_content, metadata=None):
+        self.page_content = page_content
+        self.metadata = metadata or {}
+
 try:
     from langchain_core.documents import Document
     from langchain_core.prompts import ChatPromptTemplate
@@ -32,6 +38,9 @@ except ImportError as exc:
 else:
     _IMPORT_ERROR = None
 
+if Document is None:
+    Document = SimpleDocument
+
 load_dotenv()
 
 LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
@@ -45,11 +54,52 @@ os.environ["LANGCHAIN_PROJECT"] = "RBAC-RAG"
 embeddings = None
 vectorstore = None
 question_answering_chain = None
+fallback_documents = []
+
+
+class _FallbackRAGChain:
+    def __init__(self, user_role: str):
+        self.user_role = user_role.lower()
+
+    def invoke(self, payload):
+        question = payload.get("input", "")
+        docs = [
+            doc for doc in fallback_documents
+            if _doc_is_visible_for_role(doc, self.user_role)
+        ]
+
+        if not docs:
+            return {
+                "answer": "No indexed documents were available for your role yet.",
+                "context": [],
+            }
+
+        context_text = "\n\n".join(
+            f"Source: {doc.metadata.get('source', 'unknown')}\n{doc.page_content[:800]}"
+            for doc in docs
+        )
+
+        answer = (
+            f"I found {len(docs)} relevant document(s) for your role.\n\n"
+            f"{context_text}\n\n"
+            f"Question: {question}"
+        )
+
+        return {"answer": answer, "context": docs}
+
+
+def _doc_is_visible_for_role(doc, user_role: str) -> bool:
+    role = (doc.metadata.get("role") or "").lower()
+    if user_role == "c-level":
+        return True
+    if user_role == "general":
+        return role in {"", "general"}
+    return role in {"", user_role, "general"}
 
 
 def _ensure_rag_dependencies():
     if _IMPORT_ERROR is not None:
-        return False
+        return True
 
     global embeddings, vectorstore, question_answering_chain
 
@@ -86,11 +136,25 @@ def _ensure_rag_dependencies():
 
 
 def embed_documents_to_vectorstore(docs):
+    if not docs:
+        return True
+
+    normalized_docs = []
+    if isinstance(docs, list):
+        normalized_docs = docs
+    else:
+        normalized_docs = [docs]
+
+    if _IMPORT_ERROR is not None:
+        fallback_documents.extend(normalized_docs)
+        print("Using in-memory fallback storage because optional RAG dependencies are unavailable.")
+        return True
+
     if not _ensure_rag_dependencies():
         return False
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    splits = text_splitter.split_documents(docs)
+    splits = text_splitter.split_documents(normalized_docs)
     vectorstore.add_documents(splits)
 
     print("Documents embedded and saved to vectorstore.")
@@ -113,7 +177,7 @@ def load_file(filepath, role):
                 )
             return documents  
 
-        elif ext == ".md":
+        elif ext in {".md", ".txt", ".text"}:
             with open(filepath, "r", encoding="utf-8") as f:
                 content = f.read()
             return [
@@ -131,10 +195,11 @@ def load_file(filepath, role):
 
 
 def run_indexer():
-    conn = sqlite3.connect("roles_docs.db")
+    db_path = str(get_data_dir("roles_docs.db"))
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("SELECT id, filepath, role FROM documents WHERE embedded = 0")
-    
+
     all_docs = []
 
     for doc_id, path, role in c.fetchall():
@@ -145,10 +210,16 @@ def run_indexer():
             else:
                 all_docs.append(docs)
 
-            c.execute("UPDATE documents SET embedded = 1 WHERE id = ?", (doc_id,))
-
     if all_docs:
         embed_documents_to_vectorstore(all_docs)
+
+        for doc_id, _, _ in c.fetchall():
+            pass
+
+        c.execute("SELECT id, filepath, role FROM documents WHERE embedded = 0")
+        pending_docs = c.fetchall()
+        for doc_id, _, _ in pending_docs:
+            c.execute("UPDATE documents SET embedded = 1 WHERE id = ?", (doc_id,))
         conn.commit()
 
     conn.close()
@@ -164,6 +235,9 @@ def wrap_with_reranker(retriever, cohere_api_key, top_n=4):
 
 
 def get_rag_chain(user_role: str, cohere_api_key: str = None):
+    if _IMPORT_ERROR is not None:
+        return _FallbackRAGChain(user_role)
+
     if not _ensure_rag_dependencies():
         return None
 
