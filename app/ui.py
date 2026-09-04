@@ -1,7 +1,11 @@
 import os
 import base64
+import hashlib
 import requests
 import streamlit as st
+import pandas as pd
+import extra_streamlit_components as stx
+from cryptography.fernet import Fernet, InvalidToken
 
 from dotenv import load_dotenv
 from collections import defaultdict
@@ -9,6 +13,12 @@ from collections import defaultdict
 load_dotenv()
 
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+COOKIE_SECRET = os.getenv("COOKIE_SECRET_KEY") or os.getenv("JWT_SECRET_KEY") or "finsight-default-cookie-secret-key-change-me"
+
+_cookie_key = base64.urlsafe_b64encode(hashlib.sha256(COOKIE_SECRET.encode("utf-8")).digest())
+token_cipher = Fernet(_cookie_key)
+
+
 def auth_headers():
     """
     Returns Authorization header containing JWT.
@@ -23,11 +33,26 @@ def auth_headers():
         "Authorization": f"Bearer {token}"
     }
 
+
+def section_header(title: str, subtitle: str, label: str | None = None):
+    badge = f'<span class="fs-badge">{label}</span>' if label else ""
+    st.markdown(
+        f"""
+        <div class="fs-section-title">
+            <div><h2>{title}</h2><p>{subtitle}</p></div>
+            <div>{badge}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 st.set_page_config(
     page_title="FinSight AI Assistant",
     page_icon="🤖",
     layout="wide",
 )
+
+cookie_manager = stx.CookieManager(key="finsight_cookie_manager")
 
 def inject_theme():
     st.markdown(
@@ -64,10 +89,16 @@ def inject_theme():
 
         .stApp {
             background:
-                radial-gradient(1200px 600px at 15% -10%, rgba(198, 160, 79, 0.08), transparent 60%),
-                radial-gradient(1000px 500px at 100% 0%, rgba(63, 156, 147, 0.07), transparent 55%),
+                radial-gradient(900px 420px at 12% -10%, rgba(198, 160, 79, 0.08), transparent 62%),
+                radial-gradient(800px 400px at 100% 0%, rgba(63, 156, 147, 0.055), transparent 58%),
                 linear-gradient(180deg, var(--fs-bg) 0%, var(--fs-bg-soft) 100%);
             color: var(--fs-text);
+        }
+
+        .block-container {
+            max-width: 1360px;
+            padding-top: 1.8rem;
+            padding-bottom: 3rem;
         }
 
         [data-testid="stHeader"] {
@@ -101,9 +132,9 @@ def inject_theme():
             background: linear-gradient(160deg, var(--fs-surface-solid) 0%, var(--fs-surface-solid-2) 100%);
             border: 1px solid var(--fs-border);
             border-radius: var(--fs-r-lg);
-            padding: 28px 32px;
-            text-align: center;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+            padding: 24px 30px;
+            text-align: left;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.26);
             position: relative;
             overflow: hidden;
         }
@@ -119,16 +150,16 @@ def inject_theme():
         .fs-hero-title {
             font-family: var(--fs-font-display);
             font-weight: 600;
-            font-size: 2.1rem;
-            margin: 0 0 14px 0;
+            font-size: clamp(1.7rem, 3vw, 2.35rem);
+            margin: 0 0 10px 0;
             color: #f5f1e8;
             letter-spacing: 0.3px;
         }
 
         .fs-hero-divider {
-            width: 96px;
+            width: 72px;
             height: 2px;
-            margin: 0 auto 14px auto;
+            margin: 0 0 12px 0;
             border-radius: 2px;
             background: linear-gradient(90deg, transparent, var(--fs-gold), transparent);
             background-size: 200% 100%;
@@ -161,7 +192,7 @@ def inject_theme():
             background: var(--fs-surface-solid);
             border: 1px solid var(--fs-border);
             border-radius: var(--fs-r-md);
-            padding: 14px 8px;
+            padding: 15px 10px;
             text-align: center;
         }
 
@@ -204,6 +235,32 @@ def inject_theme():
             border: 1px solid var(--fs-border-strong);
             color: #e8d4a0;
             margin-top: 4px;
+        }
+
+        .fs-section-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin: 26px 0 6px;
+        }
+
+        .fs-section-title h2 {
+            font-size: 1.35rem;
+            margin: 0;
+        }
+
+        .fs-section-title p {
+            color: var(--fs-text-dim);
+            font-size: 0.9rem;
+            margin: 5px 0 0;
+        }
+
+        .fs-stat-card {
+            background: rgba(19, 26, 41, 0.82);
+            border: 1px solid var(--fs-border);
+            border-radius: var(--fs-r-md);
+            padding: 14px 16px;
         }
 
         /* ---------- Buttons ---------- */
@@ -314,11 +371,11 @@ def inject_theme():
 
         /* ---------- Chat ---------- */
         [data-testid="stChatMessage"] {
-            background: var(--fs-surface-solid);
-            border: 1px solid var(--fs-border);
+            background: rgba(19, 26, 41, 0.76);
+            border: 1px solid rgba(255, 255, 255, 0.07);
             border-radius: var(--fs-r-md);
-            padding: 4px 8px;
-            margin-bottom: 10px;
+            padding: 8px 10px;
+            margin-bottom: 12px;
         }
 
         [data-testid="stChatMessageAvatarUser"] {
@@ -330,23 +387,17 @@ def inject_theme():
         }
 
         [data-testid="stChatInput"]{
-            position:fixed;
-            bottom:18px;
-            left:50%;
-            transform:translateX(-50%);
-            width:72%;
-            z-index:99999;
-
-            background:#141b29;
-            border:1px solid rgba(198,160,79,.35);
-            border-radius:18px;
-
-            padding:8px;
-            box-shadow:
-            0 0 20px rgba(0,0,0,.45);
+            position: relative;
+            width: 100%;
+            margin-top: 14px;
+            background: rgba(20, 27, 41, 0.94);
+            border: 1px solid rgba(198,160,79,.30);
+            border-radius: 14px;
+            padding: 5px 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.22);
         }
         .main .block-container{
-            padding-bottom:140px;
+            padding-bottom: 48px;
         }
 
         [data-testid="stChatInput"] textarea {
@@ -363,9 +414,13 @@ def inject_theme():
             color: var(--fs-text-dim);
         }
 
-        @media (max-width: 640px) {
+        @media (max-width: 768px) {
             .fs-hero { padding: 20px 18px; }
             .fs-hero-title { font-size: 1.5rem; }
+            .block-container { padding: 1rem 0.8rem 2rem; }
+            [data-testid="stChatInput"] {
+                width: 95% !important;
+            }
         }
         </style>
         """,
@@ -422,7 +477,7 @@ with left_col:
         <div class="fs-hero">
             <h1 class="fs-hero-title">Welcome to FinSight</h1>
             <div class="fs-hero-divider"></div>
-            <p class="fs-hero-sub">Your AI-powered document assistant for FinSolve Technologies.</p>
+            <p class="fs-hero-sub">A secure workspace for trusted document intelligence and structured-data analysis.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -435,6 +490,69 @@ st.session_state.setdefault("role", None)
 st.session_state.setdefault("page", "login")
 st.session_state.setdefault("roles", [])
 st.session_state.setdefault("messages", [])
+st.session_state.setdefault("auth_restore_attempted", False)
+st.session_state.setdefault("logged_out", False)
+
+
+def clear_persisted_session():
+    """Remove the encrypted browser token during logout or failed restoration."""
+    try:
+        cookie_manager.delete("finsight_session", key="finsight_delete_session")
+    except Exception:
+        pass
+
+
+def persist_session_token(token: str):
+    """Store an opaque token cookie for the same lifetime as the access token."""
+    try:
+        encrypted_token = token_cipher.encrypt(token.encode("utf-8")).decode("utf-8")
+        cookie_manager.set(
+            "finsight_session",
+            encrypted_token,
+            key="finsight_set_session",
+            max_age=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")) * 60,
+            secure=os.getenv("ENVIRONMENT", "development").lower() in {"production", "prod"},
+            same_site="lax",
+        )
+    except Exception:
+        pass
+
+
+def restore_persisted_session():
+    """Restore a refreshed browser session only after FastAPI validates the JWT."""
+    if st.session_state.auth_restore_attempted or st.session_state.token or st.session_state.get("logged_out"):
+        return
+    st.session_state.auth_restore_attempted = True
+    try:
+        encrypted_token = cookie_manager.get("finsight_session")
+    except Exception:
+        encrypted_token = None
+
+    if not encrypted_token:
+        return
+    try:
+        token = token_cipher.decrypt(encrypted_token.encode("utf-8")).decode("utf-8")
+    except (InvalidToken, ValueError, TypeError, Exception):
+        clear_persisted_session()
+        return
+    try:
+        response = requests.get(
+            f"{API_URL}/users/me",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        if response.ok:
+            profile = response.json()
+            st.session_state.token = token
+            st.session_state.username = profile["username"]
+            st.session_state.role = profile["role"]
+            st.session_state.roles = fetch_roles()
+            st.session_state.page = "main"
+        else:
+            clear_persisted_session()
+    except requests.RequestException:
+        # Do not erase a valid login merely because the API is temporarily unavailable.
+        pass
 
 
 def fetch_roles():
@@ -458,79 +576,69 @@ def fetch_roles():
 
 
 def backend_available():
-
     try:
-
         r = requests.get(
             f"{API_URL}/docs",
             timeout=3
         )
-
-        return r.status_code==200
-
+        return r.status_code == 200
     except requests.RequestException:
-
         return False
 
-if st.session_state.page == "login":
 
-    st.subheader("🔐 Login")
+restore_persisted_session()
+
+if st.session_state.page == "login":
 
     if not backend_available():
         st.error("❌ FastAPI backend is not running.")
         st.info("Start it using:\n\nuvicorn app.main:app --reload")
         st.stop()
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    with st.form("login_form", clear_on_submit=False):
+        st.subheader("🔐 Login")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login", use_container_width=True)
 
-    if st.button("Login", use_container_width=True):
+    if submit:
+        if not username or not password:
+            st.error("Please enter both username and password.")
+        else:
+            with st.spinner("Authenticating..."):
+                try:
+                    response = requests.post(
+                        f"{API_URL}/login",
+                        json={
+                            "username": username,
+                            "password": password,
+                        },
+                        timeout=20,
+                    )
 
-        with st.spinner("Authenticating..."):
+                    if response.ok:
+                        data = response.json()
+                        st.session_state.token = data["access_token"]
+                        st.session_state.username = data["username"]
+                        st.session_state.role = data["role"]
+                        st.session_state.roles = fetch_roles()
+                        st.session_state.page = "main"
+                        st.session_state.logged_out = False
+                        st.session_state.auth_restore_attempted = True
+                        persist_session_token(data["access_token"])
+                        st.rerun()
 
-            try:
+                    else:
+                        try:
+                            st.error(response.json()["detail"])
+                        except Exception:
+                            st.error("Login failed.")
 
-                response = requests.post(
-                    f"{API_URL}/login",
-                    json={
-                        "username": username,
-                        "password": password,
-                    },
-                    timeout=20,
-                )
+                except requests.ConnectionError:
+                    st.error("Cannot connect to FastAPI backend.")
 
-                if response.ok:
-
-                    data = response.json()
-
-                    st.session_state.token = data["access_token"]
-
-                    st.session_state.username = data["username"]
-
-                    st.session_state.role = data["role"]
-
-                    st.session_state.roles = fetch_roles()
-
-                    st.session_state.page = "main"
-
-                    st.success("✅ Login Successful")
-
-                    st.rerun()
-
-                else:
-
-                    try:
-                        st.error(response.json()["detail"])
-                    except Exception:
-                        st.error("Login failed.")
-
-            except requests.ConnectionError:
-
-                st.error("Cannot connect to FastAPI backend.")
-
-            except Exception as e:
-
-                st.exception(e)
+                except Exception as e:
+                    st.exception(e)
 
 if st.session_state.page == "main":
 
@@ -551,20 +659,24 @@ if st.session_state.page == "main":
         )
 
         if st.button("🚪 Logout", use_container_width=True):
+            try:
+                requests.post(
+                    f"{API_URL}/logout",
+                    headers=auth_headers(),
+                    timeout=10,
+                )
+            except requests.RequestException:
+                pass
+            clear_persisted_session()
             st.session_state.clear()
-
             st.session_state.token = None
-
             st.session_state.username = None
-
             st.session_state.role = None
-
             st.session_state.page = "login"
-
             st.session_state.roles = []
-
             st.session_state.messages = []
-
+            st.session_state.logged_out = True
+            st.session_state.auth_restore_attempted = True
             st.rerun()
 
     with left_col:
@@ -597,27 +709,23 @@ if st.session_state.page == "main":
             (tab1,) = st.tabs(["💬 Chat"])
 
     with tab1:
+        section_header(
+            "FinSight Assistant",
+            "Ask a policy question, explore uploaded documents, or query authorized CSV data.",
+            "RBAC protected",
+        )
 
-        st.markdown("""
-                <div style="
-                padding:18px;
-                border-radius:14px;
-                background:#141b29;
-                border:1px solid rgba(198,160,79,.18);
-                margin-bottom:15px;
-                ">
-                <h2 style="margin:0">
-                🤖 FinSight Assistant
-                </h2>
+        if st.session_state.messages:
+            import json
+            chat_json = json.dumps(st.session_state.messages, indent=2)
+            st.download_button(
+                label="📥 Export Chat History (JSON)",
+                data=chat_json,
+                file_name="finsight_chat_history.json",
+                mime="application/json",
+            )
 
-                <span style="color:#9AA2B5">
-                Hybrid SQL + RAG • RBAC Enabled
-                </span>
-                </div>
-                """,
-                unsafe_allow_html=True)
-
-        chat_container = st.container(height=650)
+        chat_container = st.container(height=540)
         with chat_container:
             for msg in st.session_state.messages:
 
@@ -645,6 +753,11 @@ if st.session_state.page == "main":
                                 msg["sql"],
                                 language="sql",
                             )
+
+                    if msg.get("sources"):
+                        with st.expander("Sources"):
+                            for citation in msg["sources"]:
+                                st.markdown(f"- 📄 {citation.get('source', 'Unknown')}")
     
         question = st.chat_input("Ask FinSight anything...")
 
@@ -672,25 +785,10 @@ if st.session_state.page == "main":
                         mode = data.get("mode", "")
                         fallback = data.get("fallback", False)
                         sql = data.get("sql")
-                        context = data.get("context", [])
+                        sources = data.get("sources", [])
 
                         with st.chat_message("assistant"):
-
-                            st.markdown(
-                                        f"""
-                                        <div style="
-                                        padding:18px;
-                                        border-radius:14px;
-                                        background:#182131;
-                                        border-left:4px solid #c6a04f;
-                                        ">
-
-                                        {answer}
-
-                                        </div>
-                                        """,
-                                        unsafe_allow_html=True
-                                        )
+                            st.markdown(answer)
 
                             if mode:
                                 st.markdown(
@@ -712,34 +810,17 @@ if st.session_state.page == "main":
                                         language="sql",
                                     )
 
-                            if context:
+                            if sources:
 
                                 with st.expander(
-                                    "Retrieved Documents"
+                                    "Sources"
                                 ):
 
-                                    for doc in context:
-
-                                        metadata = doc.get(
-                                            "metadata",
-                                            {}
-                                        )
-
-                                        source = metadata.get(
-                                            "source",
-                                            "Unknown"
-                                        )
-
-                                        st.markdown(
-                                            f"### 📄 {source}"
-                                        )
-
-                                        st.write(
-                                            doc.get(
-                                                "page_content",
-                                                ""
-                                            )[:500]
-                                        )
+                                    for citation in sources:
+                                        source = citation.get("source", "Unknown")
+                                        page = citation.get("page")
+                                        page_suffix = f" · page {page + 1}" if isinstance(page, int) else ""
+                                        st.markdown(f"- 📄 {source}{page_suffix}")
 
                         st.session_state.messages.append(
                             {
@@ -748,7 +829,7 @@ if st.session_state.page == "main":
                                 "mode": mode,
                                 "fallback": fallback,
                                 "sql": sql,
-                                "context": context,
+                                "sources": sources,
                             }
                         )
 
@@ -778,8 +859,11 @@ if st.session_state.page == "main":
     if role == "C-Level":
 
         with tab2:
-
-            st.subheader("📂 Upload Documents")
+            section_header(
+                "Document intake",
+                "Upload files to a role-specific workspace. Indexing continues after the upload completes.",
+                "C-Level only",
+            )
 
             roles = st.session_state.roles
 
@@ -789,10 +873,10 @@ if st.session_state.page == "main":
             )
 
             uploaded_files = st.file_uploader(
-                "Choose CSV or Markdown files",
-                type=["csv", "md"],
+                "Choose CSV, Markdown, PDF, DOCX, or TXT files",
+                type=["csv", "md", "txt", "pdf", "docx"],
                 accept_multiple_files=True,
-                )
+            )
             if uploaded_files:
                 st.markdown("### 📂 Selected Files")
                 for file in uploaded_files:
@@ -831,10 +915,10 @@ if st.session_state.page == "main":
                             )
 
                             if response.ok:
-
-                                st.success(
-                                    response.json()["message"]
-                                )
+                                upload_result = response.json()
+                                st.success(upload_result["message"])
+                                if upload_result.get("indexing_started"):
+                                    st.info("Indexing has started in the background. Check document status in the Admin tab.")
 
                             else:
 
@@ -850,8 +934,11 @@ if st.session_state.page == "main":
                             st.exception(e)
 
         with tab3:
-
-            st.subheader("👤 User Management")
+            section_header(
+                "Administration",
+                "Manage access, roles, and the document knowledge base from one place.",
+                "C-Level only",
+            )
 
             st.markdown("### Create User")
 
@@ -959,6 +1046,90 @@ if st.session_state.page == "main":
                         st.exception(e)
             st.divider()
 
+            st.subheader("Manage Existing Users")
+            st.caption("Role changes take effect immediately. Password resets require at least 8 characters.")
+
+            try:
+                users_response = requests.get(
+                    f"{API_URL}/users",
+                    headers=auth_headers(),
+                    timeout=60,
+                )
+                users = users_response.json().get("users", []) if users_response.ok else []
+            except requests.RequestException:
+                users = []
+                st.error("Unable to load users.")
+
+            for managed_user in users:
+                user_id = managed_user["id"]
+                with st.expander(
+                    f"👤 {managed_user['username']} · {managed_user['role']}",
+                    expanded=False,
+                ):
+                    current_role = managed_user["role"]
+                    role_index = (
+                        st.session_state.roles.index(current_role)
+                        if current_role in st.session_state.roles
+                        else 0
+                    )
+                    selected_user_role = st.selectbox(
+                        "Role",
+                        st.session_state.roles,
+                        index=role_index,
+                        key=f"managed_user_role_{user_id}",
+                    )
+                    role_col, password_col = st.columns(2)
+                    with role_col:
+                        if st.button("Save Role", key=f"save_user_role_{user_id}"):
+                            role_response = requests.put(
+                                f"{API_URL}/users/{user_id}/role",
+                                data={"role": selected_user_role},
+                                headers=auth_headers(),
+                                timeout=60,
+                            )
+                            if role_response.ok:
+                                st.success(role_response.json()["message"])
+                                st.rerun()
+                            else:
+                                st.error(role_response.json().get("detail", "Unable to update role."))
+
+                    with password_col:
+                        reset_password = st.text_input(
+                            "New password",
+                            type="password",
+                            key=f"reset_password_{user_id}",
+                        )
+                        if st.button("Reset Password", key=f"reset_user_password_{user_id}"):
+                            password_response = requests.put(
+                                f"{API_URL}/users/{user_id}/password",
+                                data={"password": reset_password},
+                                headers=auth_headers(),
+                                timeout=60,
+                            )
+                            if password_response.ok:
+                                st.success(password_response.json()["message"])
+                            else:
+                                st.error(password_response.json().get("detail", "Unable to reset password."))
+
+                    if st.session_state.get("confirm_delete_user") == user_id:
+                        if st.button("Confirm Delete User", key=f"confirm_delete_user_{user_id}", type="primary"):
+                            delete_user_response = requests.delete(
+                                f"{API_URL}/users/{user_id}",
+                                headers=auth_headers(),
+                                timeout=60,
+                            )
+                            if delete_user_response.ok:
+                                st.session_state.pop("confirm_delete_user", None)
+                                st.success(delete_user_response.json()["message"])
+                                st.rerun()
+                            else:
+                                st.error(delete_user_response.json().get("detail", "Unable to delete user."))
+                    elif st.button("Delete User", key=f"delete_user_{user_id}"):
+                        st.session_state["confirm_delete_user"] = user_id
+                        st.rerun()
+
+            st.divider()
+
             st.subheader("📂 Uploaded Documents")
 
             try:
@@ -980,7 +1151,15 @@ if st.session_state.page == "main":
                 documents = []
             grouped_docs = defaultdict(list)
 
+            document_filter = st.text_input(
+                "Search documents",
+                placeholder="Filter by document name or role…",
+                key="document_filter",
+            ).strip().lower()
+
             for doc in documents:
+                if document_filter and document_filter not in doc["filename"].lower() and document_filter not in doc["role"].lower():
+                    continue
                 grouped_docs[doc["role"]].append(doc)
             if not grouped_docs:
 
@@ -996,19 +1175,61 @@ if st.session_state.page == "main":
                     ):
 
                         for doc in docs:
-
-                            status = (
-                                "✅ Indexed"
-                                if doc["embedded"]
-                                else "⏳ Pending"
+                            status_name = doc.get("status") or (
+                                "indexed" if doc.get("embedded") else "pending"
                             )
+                            status_label = {
+                                "indexed": "✅ Indexed",
+                                "pending": "⏳ Queued",
+                                "indexing": "🔄 Indexing",
+                                "failed": "⚠️ Failed",
+                            }.get(status_name, status_name.title())
 
-                            st.write(
-                                f"📄 **{doc['filename']}**  —  {status}"
-                            )
+                            doc_col, retry_col, delete_col = st.columns([6, 1.4, 1.4])
+                            with doc_col:
+                                st.markdown(f"📄 **{doc['filename']}**  —  {status_label}")
+                                if status_name == "failed" and doc.get("error_message"):
+                                    st.caption(f"Indexing error: {doc['error_message']}")
+
+                            with retry_col:
+                                if status_name == "failed" and st.button(
+                                    "Retry", key=f"retry_document_{doc['id']}"
+                                ):
+                                    retry_response = requests.post(
+                                        f"{API_URL}/documents/{doc['id']}/retry",
+                                        headers=auth_headers(),
+                                        timeout=60,
+                                    )
+                                    if retry_response.ok:
+                                        st.success("Retry started.")
+                                        st.rerun()
+                                    else:
+                                        st.error(retry_response.json().get("detail", "Retry failed."))
+
+                            with delete_col:
+                                confirmation_key = f"confirm_delete_document_{doc['id']}"
+                                if st.session_state.get("confirm_delete_document") == doc["id"]:
+                                    if st.button("Confirm", key=confirmation_key, type="primary"):
+                                        delete_response = requests.delete(
+                                            f"{API_URL}/documents/{doc['id']}",
+                                            headers=auth_headers(),
+                                            timeout=60,
+                                        )
+                                        if delete_response.ok:
+                                            st.session_state.pop("confirm_delete_document", None)
+                                            st.success("Document deleted.")
+                                            st.rerun()
+                                        else:
+                                            st.error(delete_response.json().get("detail", "Delete failed."))
+                                elif st.button("Delete", key=f"delete_document_{doc['id']}"):
+                                    st.session_state["confirm_delete_document"] = doc["id"]
+                                    st.rerun()
         with tab4:
-
-            st.header("📊 AI Evaluation Dashboard")
+            section_header(
+                "AI performance",
+                "Track answer quality, response speed, routing behavior, and recent activity.",
+                "C-Level only",
+            )
 
             response = requests.get(
                 f"{API_URL}/dashboard",
@@ -1017,9 +1238,7 @@ if st.session_state.page == "main":
             )
 
             if response.ok:
-
                 dashboard = response.json()
-
                 overview = dashboard["overview"]
 
                 col1, col2, col3, col4 = st.columns(4)
@@ -1051,17 +1270,17 @@ if st.session_state.page == "main":
                 col5, col6, col7, col8 = st.columns(4)
 
                 col5.metric(
-                    "📚 Average Retrieved Documents",
-                    f'{overview.get("avg_sources",0):.1f}%'
+                    "📚 Avg Retrieved Docs",
+                    f'{overview.get("avg_sources",0):.1f}'
                 )
                 col6.metric(
-                    "🗄 SQL Queries",
-                    f'{overview.get("sql_ratio",0):.1f}%'
+                    "👻 Hallucination Rate",
+                    f'{overview.get("hallucination_rate",0):.1f}%'
                 )
 
                 col7.metric(
-                    "📄 RAG Queries",
-                    f'{overview.get("rag_ratio",0):.1f}%'
+                    "🗄 SQL vs RAG Ratio",
+                    f'{overview.get("sql_ratio",0):.0f}% / {overview.get("rag_ratio",0):.0f}%'
                 )
 
                 col8.metric(
@@ -1070,23 +1289,41 @@ if st.session_state.page == "main":
                 )
 
                 st.divider()
-                
 
-                st.subheader("Recent Conversations")
+                history_df = pd.DataFrame(dashboard["history"])
+                if not history_df.empty:
+                    chart_left, chart_right = st.columns(2)
+                    history_df["timestamp"] = pd.to_datetime(history_df["timestamp"], errors="coerce")
+                    timeline = history_df.dropna(subset=["timestamp"]).sort_values("timestamp")
 
-                st.dataframe(
-                    dashboard["history"],
-                    use_container_width=True,
-                )
+                    with chart_left:
+                        st.caption("Quality Trend (Confidence, Faithfulness & Relevancy)")
+                        if not timeline.empty:
+                            metrics_cols = [c for c in ["confidence", "faithfulness", "relevancy", "context_recall"] if c in timeline.columns]
+                            st.line_chart(
+                                timeline.set_index("timestamp")[metrics_cols],
+                                height=220,
+                            )
+
+                    with chart_right:
+                        st.caption("Query Routing Distribution")
+                        route_counts = history_df["mode"].fillna("Unknown").value_counts()
+                        st.bar_chart(route_counts, height=220)
+
+                    st.subheader("Recent Conversations")
+                    st.dataframe(
+                        history_df,
+                        use_container_width=True,
+                    )
+                else:
+                    st.info("ℹ️ No conversation evaluation logs recorded yet. Ask a question in the Chat tab to generate live AI evaluation metrics.")
 
             else:
-
                 try:
                     error = response.json().get(
                         "detail",
                         "Unable to load dashboard."
                     )
-
                 except Exception:
                     error = response.text
 

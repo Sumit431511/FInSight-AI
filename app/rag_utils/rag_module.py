@@ -1,10 +1,13 @@
 from pathlib import Path
+import hashlib
 import sqlite3
 import os
 import pandas as pd
+from threading import Lock
 from dotenv import load_dotenv
 
 from app.config import get_data_dir
+from app.config import get_groq_model
 
 
 class SimpleDocument:
@@ -55,6 +58,7 @@ embeddings = None
 vectorstore = None
 question_answering_chain = None
 fallback_documents = []
+indexer_lock = Lock()
 
 
 class _FallbackRAGChain:
@@ -103,18 +107,19 @@ def _ensure_rag_dependencies():
 
     global embeddings, vectorstore, question_answering_chain
 
-    if embeddings is None:
-        embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+    try:
+        if embeddings is None:
+            embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 
-    if vectorstore is None:
-        vectorstore = Chroma(
-            collection_name="my_collection",
-            persist_directory=str(get_data_dir("chroma_db")),
-            embedding_function=embeddings,
-        )
+        if vectorstore is None:
+            vectorstore = Chroma(
+                collection_name="my_collection",
+                persist_directory=str(get_data_dir("chroma_db")),
+                embedding_function=embeddings,
+            )
 
-    if question_answering_chain is None:
-        system_prompt = (
+        if question_answering_chain is None:
+            system_prompt = (
             "You are an assistant for summarizing and answering queries from internal company documents.\n"
             "Always use the retrieved context to answer the query, even if partial.\n"
             "Do not guess. If data is not found, explain what you searched for.\n"
@@ -125,17 +130,20 @@ def _ensure_rag_dependencies():
             "- For CSV-style data, format in table with two columns\n"
             "\n{context}"
         )
-        chat_prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("human", "{input}"),
-        ])
-        model = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
-        question_answering_chain = create_stuff_documents_chain(model, chat_prompt)
+            chat_prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                ("human", "{input}"),
+            ])
+            model = ChatGroq(model=get_groq_model(), temperature=0.2)
+            question_answering_chain = create_stuff_documents_chain(model, chat_prompt)
+    except Exception as exc:
+        print(f"RAG runtime initialization failed; using in-memory fallback: {exc}")
+        return False
 
     return True
 
 
-def embed_documents_to_vectorstore(docs):
+def embed_documents_to_vectorstore(docs, document_id: int | None = None):
     if not docs:
         return True
 
@@ -151,18 +159,30 @@ def embed_documents_to_vectorstore(docs):
         return True
 
     if not _ensure_rag_dependencies():
-        return False
+        fallback_documents.extend(normalized_docs)
+        return True
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     splits = text_splitter.split_documents(normalized_docs)
-    vectorstore.add_documents(splits)
+    ids = []
+    for index, split in enumerate(splits):
+        stable_document_id = str(split.metadata.get("document_id", document_id or "unknown"))
+        content_hash = hashlib.sha256(split.page_content.encode("utf-8")).hexdigest()[:16]
+        ids.append(f"{stable_document_id}:{index}:{content_hash}")
+    vectorstore.add_documents(splits, ids=ids)
 
     print("Documents embedded and saved to vectorstore.")
     print("Total documents:", len(vectorstore.get()["documents"]))
     return True
 
-def load_file(filepath, role):
+def load_file(
+    filepath,
+    role,
+    document_id: int | None = None,
+    source_name: str | None = None,
+):
     ext = Path(filepath).suffix.lower()
+    source_name = source_name or Path(filepath).name
     try:
         if ext == ".csv":
             df1 = pd.read_csv(filepath)
@@ -172,20 +192,67 @@ def load_file(filepath, role):
                 documents.append(
                     Document(
                         page_content=content,
-                        metadata={"role": role.lower(), "source": Path(filepath).name}
+                        metadata={"role": role.lower(), "source": source_name}
                     )
                 )
-            return documents  
+            for document in documents:
+                document.metadata["document_id"] = str(document_id) if document_id is not None else ""
+            return documents
 
         elif ext in {".md", ".txt", ".text"}:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
             return [
                 Document(
                     page_content=content,
-                    metadata={"role": role.lower(), "source": Path(filepath).name}
+                    metadata={
+                        "role": role.lower(),
+                        "source": source_name,
+                        "document_id": str(document_id) if document_id is not None else "",
+                    }
                 )
             ]
+
+        elif ext == ".pdf":
+            try:
+                from langchain_community.document_loaders import PyPDFLoader
+                loader = PyPDFLoader(str(filepath))
+                pages = loader.load()
+                for page in pages:
+                    page.metadata["role"] = role.lower()
+                    page.metadata["source"] = source_name
+                    page.metadata["document_id"] = str(document_id) if document_id is not None else ""
+                return pages
+            except Exception:
+                import pypdf
+                reader = pypdf.PdfReader(str(filepath))
+                content = "\n".join([page.extract_text() or "" for page in reader.pages])
+                return [
+                    Document(
+                        page_content=content,
+                        metadata={
+                            "role": role.lower(),
+                            "source": source_name,
+                            "document_id": str(document_id) if document_id is not None else "",
+                        }
+                    )
+                ]
+
+        elif ext == ".docx":
+            import docx
+            doc = docx.Document(filepath)
+            content = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            return [
+                Document(
+                    page_content=content,
+                    metadata={
+                        "role": role.lower(),
+                        "source": source_name,
+                        "document_id": str(document_id) if document_id is not None else "",
+                    }
+                )
+            ]
+
         else:
             return None
 
@@ -194,36 +261,71 @@ def load_file(filepath, role):
         return None
 
 
+from app.db import get_sqlite_conn
+
+
 def run_indexer():
-    db_path = str(get_data_dir("roles_docs.db"))
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-    c.execute("SELECT id, filepath, role FROM documents WHERE embedded = 0")
+    """Index pending documents and persist per-document success or failure state."""
+    if not indexer_lock.acquire(blocking=False):
+        return {"indexed": [], "failed": [], "skipped": True}
 
-    all_docs = []
+    indexed, failed = [], []
+    try:
+        with get_sqlite_conn() as conn:
+            pending = conn.execute(
+                "SELECT id, filepath, role, filename FROM documents WHERE status = 'pending'"
+            ).fetchall()
 
-    for doc_id, path, role in c.fetchall():
-        docs = load_file(path, role)
-        if docs:
-            if isinstance(docs, list):
-                all_docs.extend(docs)
-            else:
-                all_docs.append(docs)
+        for row in pending:
+            document_id, path, role, filename = row["id"], row["filepath"], row["role"], row["filename"]
+            try:
+                with get_sqlite_conn() as conn:
+                    conn.execute(
+                        "UPDATE documents SET status = 'indexing', error_message = NULL WHERE id = ?",
+                        (document_id,),
+                    )
+                    conn.commit()
 
-    if all_docs:
-        embed_documents_to_vectorstore(all_docs)
+                docs = load_file(
+                    path,
+                    role,
+                    document_id=document_id,
+                    source_name=filename,
+                )
+                if not docs or not embed_documents_to_vectorstore(docs, document_id=document_id):
+                    raise ValueError("The document could not be converted into searchable content.")
 
-        for doc_id, _, _ in c.fetchall():
-            pass
+                with get_sqlite_conn() as conn:
+                    conn.execute(
+                        "UPDATE documents SET embedded = 1, status = 'indexed', error_message = NULL WHERE id = ?",
+                        (document_id,),
+                    )
+                    conn.commit()
+                indexed.append(document_id)
+            except Exception as exc:
+                with get_sqlite_conn() as conn:
+                    conn.execute(
+                        "UPDATE documents SET embedded = 0, status = 'failed', error_message = ? WHERE id = ?",
+                        (str(exc)[:500], document_id),
+                    )
+                    conn.commit()
+                failed.append(document_id)
+        return {"indexed": indexed, "failed": failed, "skipped": False}
+    finally:
+        indexer_lock.release()
 
-        c.execute("SELECT id, filepath, role FROM documents WHERE embedded = 0")
-        pending_docs = c.fetchall()
-        for doc_id, _, _ in pending_docs:
-            c.execute("UPDATE documents SET embedded = 1 WHERE id = ?", (doc_id,))
-        conn.commit()
 
-    conn.close()
-    print(f"Indexed {len(all_docs)} document chunks.")
+def delete_document_vectors(document_id: int) -> None:
+    """Delete all vectors associated with one document without affecting other roles."""
+    if _IMPORT_ERROR is not None:
+        fallback_documents[:] = [
+            document for document in fallback_documents
+            if document.metadata.get("document_id") != str(document_id)
+        ]
+        return
+
+    _ensure_rag_dependencies()
+    vectorstore.delete(where={"document_id": str(document_id)})
 
 def wrap_with_reranker(retriever, cohere_api_key, top_n=4):
     _ensure_rag_dependencies()
@@ -239,7 +341,7 @@ def get_rag_chain(user_role: str, cohere_api_key: str = None):
         return _FallbackRAGChain(user_role)
 
     if not _ensure_rag_dependencies():
-        return None
+        return _FallbackRAGChain(user_role)
 
     user_role = user_role.lower()
 

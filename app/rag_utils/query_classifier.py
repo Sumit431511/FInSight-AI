@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from app.config import get_groq_model
 
 try:
     from langchain_core.prompts import ChatPromptTemplate
@@ -15,7 +16,7 @@ classifier = None
 
 if ChatGroq is not None and ChatPromptTemplate is not None:
     llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
+        model=get_groq_model(),
         temperature=0,
         api_key=os.getenv("GROQ_API_KEY"),
     )

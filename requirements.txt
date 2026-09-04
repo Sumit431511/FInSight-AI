@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 streamlit
+extra-streamlit-components==0.1.60
 
 python-dotenv
 requests
@@ -10,6 +11,8 @@ pandas
 duckdb
 tabulate
 python-jose
+python-multipart
+sqlglot
 
 chromadb
 
@@ -20,8 +23,14 @@ langchain-classic
 langchain-chroma
 langchain-groq
 langchain-cohere
+langchain-text-splitters
+langchain-huggingface
+sentence-transformers
 
 cohere
 openai
+pypdf
+python-docx
+pytest-cov
 
 pytest

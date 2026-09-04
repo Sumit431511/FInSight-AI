@@ -150,23 +150,34 @@ Create a `.env` file
 
 ```env
 GROQ_API_KEY=your_api_key
+GROQ_MODEL=openai/gpt-oss-120b
 COHERE_API_KEY=your_api_key
 LANGCHAIN_API_KEY=your_api_key
 JWT_SECRET_KEY=your_secret_key
 SECRET_KEY=your_secret_key
+COOKIE_SECRET_KEY=another-long-random-secret
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 API_URL=http://localhost:8000
 PROJECT_ROOT=.
 PORT=8000
+DEFAULT_ADMIN_PASSWORD=choose-a-strong-first-admin-password
+ENVIRONMENT=development
+# Leave empty locally. Set this to a persistent disk location in deployment.
+DATA_DIR=
 ```
 
 > For deployment, make sure the same variables are set in the hosting environment and that the app has write access to the project data folders for SQLite and Chroma storage.
 
-### Basic deployment options
+### Basic Python deployment
 
-- Docker: build and run with the included Dockerfile
-- Render: use the included render.yaml
+Run FastAPI and Streamlit as separate Python services. The Streamlit service must
+use the public HTTPS URL of the FastAPI service as `API_URL`; the API must use the
+public HTTPS URL of Streamlit as `FRONTEND_URL`.
+
+The API service needs a persistent writable `DATA_DIR`. It stores SQLite, DuckDB,
+ChromaDB, uploads, and evaluation logs there. Do not use an ephemeral service
+filesystem for this directory: data and indexes would disappear after a restart.
 
 ---
 
@@ -181,7 +192,7 @@ uvicorn app.main:app --reload
 Start the frontend
 
 ```bash
-streamlit run ui.py
+streamlit run app/ui.py
 ```
 
 ---

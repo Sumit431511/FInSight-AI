@@ -85,53 +85,36 @@ def get_dashboard_data():
     total_queries = len(history)
 
     avg_confidence = history["confidence"].mean()
-
     avg_faithfulness = history["faithfulness"].mean()
-
+    avg_relevancy = history["relevancy"].mean()
+    avg_context_recall = history["context_recall"].mean()
     avg_latency = history["latency_ms"].mean()
-
     hallucination_rate = history["hallucination"].mean()
-
     avg_sources = history["source_count"].mean()
 
     sql_queries = history["mode"].astype(str).str.contains("SQL").sum()
-
     rag_queries = history["mode"].astype(str).str.contains("RAG").sum()
-
     fallback_queries = history["fallback"].sum()
 
     sql_ratio = round((sql_queries / total_queries) * 100, 2)
-
     rag_ratio = round((rag_queries / total_queries) * 100, 2)
-
     fallback_rate = round((fallback_queries / total_queries) * 100, 2)
 
     conn.close()
 
     return {
-
         "overview": {
-
             "total_queries": total_queries,
-
-            "avg_confidence": round(avg_confidence, 2),
-
-            "avg_faithfulness": round(avg_faithfulness, 2),
-
-            "avg_latency": round(avg_latency, 2),
-
-            "hallucination_rate": round(hallucination_rate, 2),
-
+            "avg_confidence": round(avg_confidence, 2) if pd.notnull(avg_confidence) else 0,
+            "avg_faithfulness": round(avg_faithfulness, 2) if pd.notnull(avg_faithfulness) else 0,
+            "avg_relevancy": round(avg_relevancy, 2) if pd.notnull(avg_relevancy) else 0,
+            "avg_context_recall": round(avg_context_recall, 2) if pd.notnull(avg_context_recall) else 0,
+            "avg_latency": round(avg_latency, 2) if pd.notnull(avg_latency) else 0,
+            "hallucination_rate": round(hallucination_rate, 2) if pd.notnull(hallucination_rate) else 0,
             "sql_ratio": sql_ratio,
-
             "rag_ratio": rag_ratio,
-
             "fallback_rate": fallback_rate,
-
-            "avg_sources": round(avg_sources, 2),
-
+            "avg_sources": round(avg_sources, 2) if pd.notnull(avg_sources) else 0,
         },
-
-        "history": history.to_dict(orient="records")
-
+        "history": history.to_dict(orient="records"),
     }

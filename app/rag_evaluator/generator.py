@@ -3,11 +3,12 @@ import pandas as pd
 import os
 
 from langchain_groq import ChatGroq
+from app.config import get_groq_model
 
 from .prompts import QUESTION_GENERATION_PROMPT
 
 llm = ChatGroq(
-    model = "llama-3.3-70b-versatile",
+    model=get_groq_model(),
     api_key=os.getenv("GROQ_API_KEY")
 )
 
