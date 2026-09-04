@@ -157,7 +157,7 @@ app.include_router(chat_routes.router, tags=["Chat"])
 app.include_router(dashboard_routes.router, tags=["Dashboard"])
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {
         "message": "FinSight RBAC RAG API is running",
@@ -166,6 +166,6 @@ def root():
     }
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     return {"status": "ok"}
