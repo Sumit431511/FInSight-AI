@@ -19,27 +19,20 @@ try:
     from langchain_core.documents import Document
     from langchain_core.prompts import ChatPromptTemplate
     from langchain_text_splitters import RecursiveCharacterTextSplitter
-    from langchain_chroma import Chroma
-    from langchain_huggingface import HuggingFaceEmbeddings
-    from langchain_groq import ChatGroq
-    from langchain_classic.chains.combine_documents import create_stuff_documents_chain
-    from langchain_classic.chains.retrieval import create_retrieval_chain
-    from langchain_cohere import CohereRerank
-    from langchain_classic.retrievers import ContextualCompressionRetriever
+    _IMPORT_ERROR = None
 except ImportError as exc:
     Document = None
     ChatPromptTemplate = None
     RecursiveCharacterTextSplitter = None
-    Chroma = None
-    HuggingFaceEmbeddings = None
-    ChatGroq = None
-    create_stuff_documents_chain = None
-    create_retrieval_chain = None
-    CohereRerank = None
-    ContextualCompressionRetriever = None
     _IMPORT_ERROR = exc
-else:
-    _IMPORT_ERROR = None
+
+Chroma = None
+HuggingFaceEmbeddings = None
+ChatGroq = None
+create_stuff_documents_chain = None
+create_retrieval_chain = None
+CohereRerank = None
+ContextualCompressionRetriever = None
 
 if Document is None:
     Document = SimpleDocument
@@ -105,11 +98,33 @@ def _ensure_rag_dependencies():
     if _IMPORT_ERROR is not None:
         return True
 
+    global Chroma, HuggingFaceEmbeddings, ChatGroq, create_stuff_documents_chain
+    global create_retrieval_chain, CohereRerank, ContextualCompressionRetriever
     global embeddings, vectorstore, question_answering_chain
 
     try:
+        if Chroma is None:
+            from langchain_chroma import Chroma as _Chroma
+            from langchain_huggingface import HuggingFaceEmbeddings as _HuggingFaceEmbeddings
+            from langchain_groq import ChatGroq as _ChatGroq
+            from langchain_classic.chains.combine_documents import create_stuff_documents_chain as _csdc
+            from langchain_classic.chains.retrieval import create_retrieval_chain as _crc
+            from langchain_cohere import CohereRerank as _CohereRerank
+            from langchain_classic.retrievers import ContextualCompressionRetriever as _ccr
+
+            Chroma = _Chroma
+            HuggingFaceEmbeddings = _HuggingFaceEmbeddings
+            ChatGroq = _ChatGroq
+            create_stuff_documents_chain = _csdc
+            create_retrieval_chain = _crc
+            CohereRerank = _CohereRerank
+            ContextualCompressionRetriever = _ccr
+
         if embeddings is None:
-            embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+            embeddings = HuggingFaceEmbeddings(
+                model_name="BAAI/bge-small-en-v1.5",
+                model_kwargs={"device": "cpu"},
+            )
 
         if vectorstore is None:
             vectorstore = Chroma(
@@ -120,16 +135,16 @@ def _ensure_rag_dependencies():
 
         if question_answering_chain is None:
             system_prompt = (
-            "You are an assistant for summarizing and answering queries from internal company documents.\n"
-            "Always use the retrieved context to answer the query, even if partial.\n"
-            "Do not guess. If data is not found, explain what you searched for.\n"
-            "When responding:\n"
-            "- Add **Source** from document metadata if possible.\n"
-            "- Use headers\n"
-            "- Use bullet points\n"
-            "- For CSV-style data, format in table with two columns\n"
-            "\n{context}"
-        )
+                "You are an assistant for summarizing and answering queries from internal company documents.\n"
+                "Always use the retrieved context to answer the query, even if partial.\n"
+                "Do not guess. If data is not found, explain what you searched for.\n"
+                "When responding:\n"
+                "- Add **Source** from document metadata if possible.\n"
+                "- Use headers\n"
+                "- Use bullet points\n"
+                "- For CSV-style data, format in table with two columns\n"
+                "\n{context}"
+            )
             chat_prompt = ChatPromptTemplate.from_messages([
                 ("system", system_prompt),
                 ("human", "{input}"),
