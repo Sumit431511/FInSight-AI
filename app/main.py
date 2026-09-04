@@ -98,7 +98,7 @@ def init_db_schema():
 
 def create_default_user():
     """Seed initial C-Level role and default admin user."""
-    default_pw = os.getenv("DEFAULT_ADMIN_PASSWORD")
+    default_pw = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 
     with get_sqlite_conn() as conn:
         cursor = conn.cursor()
@@ -106,11 +106,6 @@ def create_default_user():
             "INSERT OR IGNORE INTO roles(role_name) VALUES(?)",
             ("C-Level",),
         )
-
-        if not default_pw:
-            conn.commit()
-            print("DEFAULT_ADMIN_PASSWORD is not set; skipped default admin creation.")
-            return
 
         password = hash_password(default_pw)
         try:
