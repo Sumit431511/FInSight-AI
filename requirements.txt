@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 fastapi
 uvicorn[standard]
 streamlit
@@ -5,7 +7,6 @@ extra-streamlit-components==0.1.60
 
 python-dotenv
 requests
-passlib[bcrypt]
 argon2-cffi
 pandas
 duckdb
@@ -31,6 +32,6 @@ cohere
 openai
 pypdf
 python-docx
-pytest-cov
 
 pytest
+pytest-cov

@@ -3,13 +3,17 @@ services:
     name: rbac-project-api
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+    buildCommand: pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
       - key: PORT
         value: 10000
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MALLOC_TRIM_THRESHOLD_
+        value: "100000"
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: SECRET_KEY
