@@ -1,0 +1,94 @@
+# ============================================================
+# FinSight-AI  —  Docker Compose Orchestration
+# ============================================================
+# Services:
+#   backend   : FastAPI + Uvicorn (port 8000)
+#   frontend  : Streamlit UI      (port 8501)
+# Volumes:
+#   finsight_data : Persistent storage for SQLite, DuckDB,
+#                   ChromaDB, uploaded documents, and eval logs
+# ============================================================
+
+version: "3.9"
+
+services:
+
+  # ----------------------------------------------------------
+  # FastAPI Backend
+  # ----------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: finsight_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env                  # Your real secrets (GROQ_API_KEY, JWT_SECRET_KEY, …)
+    environment:
+      PORT: "8000"
+      DATA_DIR: /data         # All persistent data lives under this mount
+      ENVIRONMENT: production
+      OMP_NUM_THREADS: "1"
+      MALLOC_TRIM_THRESHOLD_: "100000"
+      # Frontend URL used for CORS whitelist
+      FRONTEND_URL: "http://localhost:8501"
+    volumes:
+      # Named volume — survives container restarts and re-builds
+      - finsight_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - finsight_net
+
+  # ----------------------------------------------------------
+  # Streamlit Frontend
+  # ----------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: finsight_frontend
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      # Point the frontend at the backend service name inside Docker network
+      API_URL: "http://backend:8000"
+      STREAMLIT_SERVER_PORT: "8501"
+      STREAMLIT_SERVER_ADDRESS: "0.0.0.0"
+      STREAMLIT_SERVER_HEADLESS: "true"
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+    depends_on:
+      backend:
+        condition: service_healthy   # Wait until backend health check passes
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - finsight_net
+
+# ----------------------------------------------------------
+# Persistent Named Volume
+# ----------------------------------------------------------
+volumes:
+  finsight_data:
+    driver: local
+
+# ----------------------------------------------------------
+# Internal Docker Network (services communicate by name)
+# ----------------------------------------------------------
+networks:
+  finsight_net:
+    driver: bridge

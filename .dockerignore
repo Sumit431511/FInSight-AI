@@ -1,0 +1,55 @@
+# ============================================================
+# FinSight-AI  —  .dockerignore
+# Excludes unnecessary files from the Docker build context
+# to keep image layers small and build times fast.
+# ============================================================
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Pytest / coverage
+.pytest_cache/
+htmlcov/
+.coverage
+*.log
+report.html
+
+# Git
+.git/
+.gitignore
+
+# IDE / editor settings
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets — never copy into image; supply via docker-compose env_file
+.env
+
+# Large data files generated at runtime (mounted as volumes instead)
+chroma_db/
+roles_docs.db
+static/data/
+static/uploads/
+app/rag_evaluator/data/
+
+# Playwright / test artefacts
+videos/
+tests/
+
+# Node (if any frontend tooling was added)
+node_modules/

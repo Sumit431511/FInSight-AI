@@ -1,0 +1,56 @@
+# ============================================================
+# FinSight-AI  —  Streamlit Frontend Dockerfile
+# ============================================================
+
+FROM python:3.10-slim
+
+LABEL maintainer="FinSight-AI"
+LABEL service="finsight-frontend"
+
+# Security: run as non-root user
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+
+WORKDIR /app
+
+# Install OS-level dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install only the packages needed by the Streamlit frontend
+# (no PyTorch / ChromaDB / heavy ML libraries needed here)
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir \
+        streamlit \
+        extra-streamlit-components==0.1.60 \
+        requests \
+        python-dotenv \
+        pandas \
+        cryptography
+
+# Copy only the UI entrypoint and any static assets
+COPY app/ui.py ./app/ui.py
+COPY assets/ ./assets/
+COPY static/ ./static/
+COPY .env* ./
+
+# Fix file ownership
+RUN chown -R appuser:appgroup /app
+USER appuser
+
+# ---- Environment defaults ----
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    # This is the URL of the FastAPI backend container (set in docker-compose)
+    API_URL=http://backend:8000 \
+    STREAMLIT_SERVER_PORT=8501 \
+    STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
+    STREAMLIT_SERVER_HEADLESS=true \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+EXPOSE 8501
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+
+CMD ["streamlit", "run", "app/ui.py", "--server.port=8501", "--server.address=0.0.0.0"]

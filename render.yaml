@@ -1,20 +1,71 @@
 services:
+
+  # ──────────────────────────────────────────
+  # SERVICE 1: FastAPI Backend
+  # ──────────────────────────────────────────
   - type: web
-    name: rbac-project-api
+    name: finsight-backend
     env: python
     plan: free
-    buildCommand: pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt
+    region: singapore               # closest to India
+    buildCommand: >
+      pip install torch --index-url https://download.pytorch.org/whl/cpu &&
+      pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.0
-      - key: PORT
-        value: 10000
+        value: "3.10.11"
       - key: OMP_NUM_THREADS
         value: "1"
       - key: MALLOC_TRIM_THRESHOLD_
         value: "100000"
+      - key: ENVIRONMENT
+        value: production
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: SECRET_KEY
         generateValue: true
+      - key: COOKIE_SECRET_KEY
+        generateValue: true
+      - key: DEFAULT_ADMIN_PASSWORD
+        value: admin123
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      # ⚠️  Add these manually in the Render dashboard — never commit real keys to git
+      - key: GROQ_API_KEY
+        sync: false
+      - key: COHERE_API_KEY
+        sync: false
+      - key: LANGCHAIN_API_KEY
+        sync: false
+      # Frontend URL for CORS whitelist (update after frontend is deployed)
+      - key: FRONTEND_URL
+        value: https://finsight-frontend.onrender.com
+
+  # ──────────────────────────────────────────
+  # SERVICE 2: Streamlit Frontend
+  # ──────────────────────────────────────────
+  - type: web
+    name: finsight-frontend
+    env: python
+    plan: free
+    region: singapore
+    buildCommand: >
+      pip install streamlit extra-streamlit-components==0.1.60
+      requests python-dotenv pandas cryptography
+    startCommand: >
+      streamlit run app/ui.py
+      --server.port $PORT
+      --server.address 0.0.0.0
+      --server.headless true
+      --browser.gatherUsageStats false
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.10.11"
+      # ⚠️  Update this URL after your backend is live on Render
+      - key: API_URL
+        value: https://finsight-backend.onrender.com
+      - key: COOKIE_SECRET_KEY
+        sync: false
+      - key: ENVIRONMENT
+        value: production

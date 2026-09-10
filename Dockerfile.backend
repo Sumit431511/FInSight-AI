@@ -1,0 +1,80 @@
+# ============================================================
+# FinSight-AI  —  FastAPI Backend Dockerfile
+# ============================================================
+# Multi-stage build:
+#   Stage 1 (builder) : Install Python dependencies with pip
+#   Stage 2 (runtime) : Copy wheels and run the ASGI server
+# ============================================================
+
+# --------------- Stage 1: dependency builder ---------------
+FROM python:3.10-slim AS builder
+
+WORKDIR /install
+
+# Install OS-level build tools required by some Python packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        gcc \
+        g++ \
+        libffi-dev \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first to leverage Docker layer caching
+COPY requirements.txt .
+
+# Install CPU-only PyTorch first (avoids pulling the 2 GB GPU wheel),
+# then install the rest of the project dependencies.
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir \
+        torch \
+        --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        -r requirements.txt
+
+# --------------- Stage 2: lean runtime image ---------------
+FROM python:3.10-slim AS runtime
+
+LABEL maintainer="FinSight-AI"
+LABEL service="finsight-backend"
+
+# Security: run as non-root user
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+
+WORKDIR /app
+
+# Copy installed packages from builder stage
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy application source code
+COPY app/ ./app/
+COPY .env* ./
+
+# Create persistent data directories with correct ownership
+RUN mkdir -p \
+        /data/static/uploads \
+        /data/static/data \
+        /data/chroma_db \
+        /app/app/rag_evaluator/data && \
+    chown -R appuser:appgroup /data /app
+
+USER appuser
+
+# ---- Environment defaults (override via .env or docker-compose) ----
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    OMP_NUM_THREADS=1 \
+    MALLOC_TRIM_THRESHOLD_=100000 \
+    DATA_DIR=/data \
+    PORT=8000
+
+EXPOSE 8000
+
+# Health check used by Docker and Render
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+# Start Uvicorn ASGI server (single worker — scale out via docker-compose replicas or k8s)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
